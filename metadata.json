@@ -1,0 +1,10 @@
+{
+  "name": "VEGA SECURITY CAM",
+  "description": "Sistema profesional de videovigilancia en vivo de baja latencia, escaneo automático de cámaras IP/WiFi, grabación 24/7 con purga inteligente (8-10 días), cifrado E2EE y reportes.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "notifications"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
