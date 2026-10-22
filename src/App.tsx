@@ -26,6 +26,7 @@ import {
   STORAGE_KEY_STATIC_CAMERAS,
   createActiveCameraFromStaticIp,
 } from './utils/staticIpManager.ts';
+import { createRealPlayableVideoBlob } from './utils/realVideoRecorder.ts';
 import { NavigationHeader } from './components/NavigationHeader.tsx';
 import { LiveCameraGrid } from './components/LiveCameraGrid.tsx';
 import { FacialRecognitionManager } from './components/FacialRecognitionManager.tsx';
@@ -331,30 +332,31 @@ export default function App() {
     );
   };
 
-  const handleDownloadSingleRecording = (rec: RecordingItem) => {
-    const dummyBlob = new Blob(
-      [
-        `VEGA SECURITY CAM ENCRYPTED VIDEO STREAM\nCamera: ${rec.cameraName}\nTimestamp: ${new Date(
-          rec.timestamp
-        ).toISOString()}\nDuration: ${rec.durationSeconds}s\nE2EE Hash: SHA256-VIDEO-EVIDENCE-VALID`,
-      ],
-      { type: 'video/mp4' }
-    );
-    const url = URL.createObjectURL(dummyBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${rec.cameraName.replace(/\s+/g, '_')}_${new Date(rec.timestamp)
-      .toISOString()
-      .slice(0, 19)
-      .replace(/:/g, '-')}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadSingleRecording = async (rec: RecordingItem) => {
+    try {
+      // Generate genuine, valid playable video file using canvas/MediaRecorder engine
+      const realVideoBlob = await createRealPlayableVideoBlob(rec.cameraName, rec.timestamp, 2);
+      const url = URL.createObjectURL(realVideoBlob);
+      const filename = `${rec.cameraName.replace(/\s+/g, '_')}_${new Date(rec.timestamp)
+        .toISOString()
+        .slice(0, 19)
+        .replace(/:/g, '-')}.webm`;
 
-    setRecordings((prev) =>
-      prev.map((r) => (r.id === rec.id ? { ...r, hasBeenDownloaded: true } : r))
-    );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+      setRecordings((prev) =>
+        prev.map((r) => (r.id === rec.id ? { ...r, hasBeenDownloaded: true } : r))
+      );
+    } catch (err) {
+      console.error('Error al generar archivo de video reproducible:', err);
+      alert('Error al descargar el archivo de video.');
+    }
   };
 
   const handleDownloadBulkDay = async (dayTimestamp: number) => {
@@ -371,15 +373,13 @@ export default function App() {
         return;
       }
 
-      dayRecordings.forEach((rec, idx) => {
-        const filename = `${rec.cameraName.replace(/\s+/g, '_')}_rec_${idx + 1}.mp4`;
-        zip.file(
-          filename,
-          `VEGA SECURITY CAM - ARCHIVO DE VIDEO 24/7\nCámara: ${rec.cameraName}\nHora: ${new Date(
-            rec.timestamp
-          ).toLocaleTimeString()}\nDuración: ${rec.durationSeconds} segundos\nCifrado: AES-256-GCM`
-        );
-      });
+      // Generate real playable video blobs for each recording
+      for (let idx = 0; idx < dayRecordings.length; idx++) {
+        const rec = dayRecordings[idx];
+        const filename = `${rec.cameraName.replace(/\s+/g, '_')}_rec_${idx + 1}.webm`;
+        const videoBlob = await createRealPlayableVideoBlob(rec.cameraName, rec.timestamp, 1);
+        zip.file(filename, videoBlob);
+      }
 
       zip.file(
         'manifest_grabaciones.json',
@@ -388,6 +388,7 @@ export default function App() {
             sistema: 'VEGA SECURITY CAM',
             fecha: targetDateStr,
             totalArchivos: dayRecordings.length,
+            formatoVideo: 'WEBM / VP8 (Reproducible en VLC, QuickTime y Navegadores)',
             reglaRetencion: `${retentionDays} días antes de purga automática`,
             descargadoPorCliente: true,
           },
@@ -404,7 +405,7 @@ export default function App() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
 
       setRecordings((prev) =>
         prev.map((r) =>
@@ -413,6 +414,7 @@ export default function App() {
       );
     } catch (e) {
       console.error('Error generating bulk ZIP:', e);
+      alert('Error al empaquetar grabaciones en ZIP.');
     }
   };
 
@@ -453,6 +455,7 @@ export default function App() {
             facialProfiles={facialProfiles}
             onTriggerAlert={handleTriggerAlert}
             onCaptureSnapshotForFace={handleCaptureSnapshotForFace}
+            onSaveNewRecording={(newRec) => setRecordings((prev) => [newRec, ...prev])}
           />
         )}
 
